@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Bandera NOC — Infrastructure Documentation | Uplink Security</title>
+<meta name="description" content="Self-hosted homelab infrastructure documentation — virtualization, networking, containerization, monitoring, and Zero Trust security." />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { darkMode: 'class' };
+</script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { background: #030712; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+const docData = {
+  nav: [
+    { label: "Overview", items: [
+      { id: "overview", label: "Project Overview" },
+      { id: "hardware", label: "Hardware Specs" },
+      { id: "network", label: "Network Layout" },
+    ]},
+    { label: "Infrastructure", items: [
+      { id: "proxmox", label: "Proxmox VE" },
+      { id: "storage", label: "Storage Pools" },
+      { id: "ubuntu", label: "Ubuntu Docker Host" },
+    ]},
+    { label: "Services", items: [
+      { id: "monitoring", label: "Monitoring Stack" },
+      { id: "media", label: "Media Stack" },
+      { id: "homeautomation", label: "Home Automation" },
+      { id: "homepage", label: "Homepage Dashboard" },
+      { id: "remote", label: "Remote Access" },
+    ]},
+    { label: "Security", items: [
+      { id: "security", label: "Auth & Zero Trust" },
+    ]},
+    { label: "Reference", items: [
+      { id: "ports", label: "Port Reference" },
+      { id: "commands", label: "Common Commands" },
+      { id: "roadmap", label: "Roadmap" },
+    ]},
+  ],
+};
+
+function CodeBlock({ code, lang = "bash" }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <div className="relative group rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 mb-5 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800">
+        <span className="text-xs font-mono text-gray-500 dark:text-gray-400 uppercase tracking-widest">{lang}</span>
+        <button onClick={copy} className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors px-2 py-1 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700">
+          {copied ? (
+            <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>Copied!</>
+          ) : (
+            <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</>
+          )}
+        </button>
+      </div>
+      <pre className="p-4 text-sm font-mono text-green-400 dark:text-green-300 overflow-x-auto leading-relaxed whitespace-pre">{code}</pre>
+    </div>
+  );
+}
+
+function Callout({ type = "info", children }) {
+  const styles = {
+    info: "bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200",
+    success: "bg-emerald-50 dark:bg-emerald-950 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200",
+    warning: "bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200",
+    danger: "bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200",
+  };
+  const icons = { info: "ℹ️", success: "✅", warning: "⚠️", danger: "🚫" };
+  return (
+    <div className={`flex gap-3 border rounded-xl p-4 mb-5 text-sm leading-relaxed ${styles[type]}`}>
+      <span className="mt-0.5 text-base flex-shrink-0">{icons[type]}</span>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function Badge({ children, color = "gray" }) {
+  const colors = {
+    green: "bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300",
+    blue: "bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300",
+    gray: "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400",
+    orange: "bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300",
+    purple: "bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300",
+  };
+  return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors[color]}`}>{children}</span>;
+}
+
+function DataTable({ headers, rows }) {
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+          <tr>{headers.map((h, i) => <th key={i} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{h}</th>)}</tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 dark:divide-gray-800 bg-white dark:bg-gray-900">
+          {rows.map((row, i) => (
+            <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+              {row.map((cell, j) => (
+                <td key={j} className={`px-4 py-3 ${j === 0 ? "font-mono text-blue-600 dark:text-blue-400 font-medium" : j === 1 ? "font-mono text-emerald-600 dark:text-emerald-400" : "text-gray-700 dark:text-gray-300"}`}>{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, accent }) {
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
+      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">{label}</p>
+      <p className={`text-base font-semibold ${accent ? "text-blue-600 dark:text-blue-400" : "text-gray-900 dark:text-gray-100"}`}>{value}</p>
+      {sub && <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5 font-mono">{sub}</p>}
+    </div>
+  );
+}
+
+function SecurityLayer({ num, name, desc, status }) {
+  return (
+    <div className="flex items-center gap-4 p-4 border-b border-gray-100 dark:border-gray-800 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+      <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 flex items-center justify-center text-xs font-bold flex-shrink-0">{num}</div>
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{name}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{desc}</p>
+      </div>
+      <Badge color="green">{status}</Badge>
+    </div>
+  );
+}
+
+function PhaseItem({ tag, tagColor, title, body, dotColor, isLast }) {
+  const dots = { green: "bg-emerald-500", blue: "bg-blue-500", gray: "bg-gray-300 dark:bg-gray-600" };
+  const tags = { green: "text-emerald-600 dark:text-emerald-400", blue: "text-blue-600 dark:text-blue-400", gray: "text-gray-400" };
+  return (
+    <div className="flex gap-4 pb-6">
+      <div className="flex flex-col items-center flex-shrink-0 pt-1">
+        <div className={`w-3 h-3 rounded-full flex-shrink-0 ${dots[dotColor]}`} />
+        {!isLast && <div className="w-px flex-1 bg-gray-200 dark:bg-gray-700 mt-2" />}
+      </div>
+      <div className="pb-2">
+        <p className={`text-xs font-mono font-semibold mb-1 uppercase tracking-wider ${tags[tagColor]}`}>{tag}</p>
+        <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{title}</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+function PortPill({ service, port }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
+      <span className="text-sm text-gray-700 dark:text-gray-300">{service}</span>
+      <span className="font-mono text-xs bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded-md">{port}</span>
+    </div>
+  );
+}
+
+const sections = [
+  { id: "overview", label: "Project Overview" },
+  { id: "hardware", label: "Hardware Specs" },
+  { id: "network", label: "Network Layout" },
+  { id: "proxmox", label: "Proxmox VE" },
+  { id: "storage", label: "Storage Pools" },
+  { id: "ubuntu", label: "Ubuntu Docker Host" },
+  { id: "monitoring", label: "Monitoring Stack" },
+  { id: "media", label: "Media Stack" },
+  { id: "homeautomation", label: "Home Automation" },
+  { id: "homepage", label: "Homepage Dashboard" },
+  { id: "remote", label: "Remote Access" },
+  { id: "security", label: "Auth & Zero Trust" },
+  { id: "ports", label: "Port Reference" },
+  { id: "commands", label: "Common Commands" },
+  { id: "roadmap", label: "Roadmap" },
+];
+
+function DocsPage() {
+  const [dark, setDark] = useState(true);
+  const [activeSection, setActiveSection] = useState("overview");
+  const [search, setSearch] = useState("");
+  const [openGroups, setOpenGroups] = useState({ Overview: true, Infrastructure: true, Services: true, Security: true, Reference: true });
+  const [navSticky, setNavSticky] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+  }, [dark]);
+
+  useEffect(() => {
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(e => { if (e.isIntersecting) setActiveSection(e.target.id); });
+      },
+      { rootMargin: "-20% 0px -70% 0px" }
+    );
+    sections.forEach(s => {
+      const el = document.getElementById(s.id);
+      if (el) obs.observe(el);
+    });
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => setNavSticky(window.scrollY > 10);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const toggleGroup = (label) => setOpenGroups(g => ({ ...g, [label]: !g[label] }));
+
+  const filteredNav = docData.nav.map(group => ({
+    ...group,
+    items: group.items.filter(item => item.label.toLowerCase().includes(search.toLowerCase())),
+  })).filter(g => !search || g.items.length > 0);
+
+  const scrollTo = (id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  return (
+    <div className={`min-h-screen flex flex-col font-sans ${dark ? "dark bg-gray-950 text-gray-100" : "bg-white text-gray-900"}`}>
+      {/* TOP NAV */}
+      <header className={`sticky top-0 z-50 border-b transition-all ${dark ? "bg-gray-950 border-gray-800" : "bg-white border-gray-200"} ${navSticky ? "shadow-sm" : ""}`}>
+        <div className="max-w-screen-xl mx-auto px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center text-white text-xs font-bold">B</div>
+            <span className="font-semibold text-sm">Bandera NOC</span>
+            <span className="hidden sm:inline text-gray-400 dark:text-gray-600">/</span>
+            <span className="hidden sm:inline text-sm text-gray-500 dark:text-gray-400">Documentation</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <a href="/" className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors px-2 py-1">← Back to site</a>
+            <span className="hidden sm:flex items-center gap-1.5 text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 px-2.5 py-1 rounded-full">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />Online
+            </span>
+            <button onClick={() => setDark(d => !d)} className="w-8 h-8 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm">
+              {dark ? "☀️" : "🌙"}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex flex-1 max-w-screen-xl mx-auto w-full">
+        {/* LEFT SIDEBAR */}
+        <aside className="hidden lg:flex flex-col w-60 flex-shrink-0 border-r border-gray-200 dark:border-gray-800 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto py-4">
+          <div className="px-3 mb-4">
+            <div className="relative">
+              <svg className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." className="w-full pl-8 pr-3 py-2 text-sm bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 dark:placeholder-gray-500 text-gray-900 dark:text-gray-100" />
+            </div>
+          </div>
+          {filteredNav.map(group => (
+            <div key={group.label} className="mb-1">
+              <button onClick={() => toggleGroup(group.label)} className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                {group.label}
+                <svg className={`w-3 h-3 transition-transform ${openGroups[group.label] ? "" : "-rotate-90"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              {openGroups[group.label] && (
+                <div className="ml-2 border-l border-gray-200 dark:border-gray-700 pl-2">
+                  {group.items.map(item => (
+                    <button key={item.id} onClick={() => scrollTo(item.id)}
+                      className={`w-full text-left px-3 py-1.5 text-sm rounded-lg mb-0.5 transition-all ${activeSection === item.id ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-medium" : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100"}`}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </aside>
+
+        {/* MAIN CONTENT */}
+        <main className="flex-1 min-w-0 px-8 py-10 max-w-3xl">
+
+          {/* OVERVIEW */}
+          <section id="overview" className="mb-16 scroll-mt-20">
+            <div className="flex items-center gap-2 mb-4">
+              <Badge color="blue">v2.0 · May 2026</Badge>
+              <Badge color="green">● Live</Badge>
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-3 leading-tight">Bandera NOC</h1>
+            <p className="text-base text-gray-600 dark:text-gray-400 leading-relaxed mb-8 max-w-xl">Self-hosted homelab built from the ground up in Bandera, TX. Real-world infrastructure across virtualization, networking, containerization, monitoring, and security.</p>
+            <Callout type="info">This is a public showcase build of the Bandera NOC documentation. Internal addresses shown here are illustrative and do not reflect live production values.</Callout>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-0">
+              {[["2", "Proxmox Nodes"], ["13+", "Containers"], ["3", "Security Layers"], ["4TB", "Storage"]].map(([v, l]) => (
+                <div key={l} className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <p className="text-2xl font-bold text-gray-900 dark:text-white">{v}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 uppercase tracking-wide">{l}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* HARDWARE */}
+          <section id="hardware" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Hardware Specs</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Physical hardware running the homelab.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                ["CPU", "AMD Threadripper", "AMD-V Enabled"],
+                ["Fast Storage 1", "Samsung 970 EVO+", "1TB — Proxmox OS + LVM"],
+                ["Fast Storage 2", "Kingston NVMe", "1TB — ZFS pool (nvme-fast)"],
+                ["Bulk Storage", "2× GIGASTONE 2TB", "ZFS mirror — tank pool"],
+                ["NAS", "QNAP", "10.20.30.20"],
+                ["Network", "UniFi Stack", "UDM Pro at 10.20.30.1"],
+              ].map(([l, v, s]) => <StatCard key={l} label={l} value={v} sub={s} />)}
+            </div>
+          </section>
+
+          {/* NETWORK */}
+          <section id="network" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Network Layout</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Flat <code className="font-mono text-blue-600 dark:text-blue-400">10.20.30.0/24</code> LAN managed by UniFi. Static IPs on all infrastructure hosts.</p>
+            <DataTable
+              headers={["Hostname", "IP Address", "Role"]}
+              rows={[
+                ["UDM Pro", "10.20.30.1", "Router, DHCP, DNS, WiFi Controller"],
+                ["PVE1", "10.20.30.48", "Proxmox VE — Primary Hypervisor"],
+                ["PVE2", "10.20.30.13", "Proxmox VE — Secondary Hypervisor"],
+                ["ubuntu-infra", "10.20.30.15", "Ubuntu 26.04 — Docker Host"],
+                ["Plex Server", "10.20.30.12", "Media Server (migrated from Mac Mini)"],
+                ["QNAP NAS", "10.20.30.20", "NAS Storage"],
+                ["Home Assistant", "10.20.30.21", "Home Automation Hub"],
+                ["AdGuard Home", "10.20.30.25", "DNS Filtering"],
+                ["HOOBS", "10.20.30.24", "HomeKit Bridge"],
+                ["Win Server 2022", "10.20.30.16", "Windows Server — AD/DNS"],
+                ["Win Server 2025", "10.20.30.17", "Windows Server 2025"],
+                ["Win 11 Client", "10.20.30.18", "Domain-joined — HOMELAB\\az"],
+              ]}
+            />
+          </section>
+
+          {/* PROXMOX */}
+          <section id="proxmox" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Proxmox VE</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Hypervisor running on bare metal.</p>
+            <Callout type="success">Proxmox VE 9.1 installed on bare metal. AMD-V virtualization enabled in BIOS. AMD RAID disabled, AHCI mode enabled for ZFS compatibility.</Callout>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <StatCard label="Web UI" value="https://10.20.30.48:8006" sub="Login: root" accent />
+              <StatCard label="OS" value="Debian (Proxmox base)" sub="No-subscription repo" />
+            </div>
+          </section>
+
+          {/* STORAGE */}
+          <section id="storage" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Storage Pools</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">ZFS and LVM storage pools configured on Proxmox.</p>
+            <DataTable
+              headers={["Pool", "Type", "Size", "Purpose"]}
+              rows={[
+                ["local", "Directory", "~500GB", "ISOs, backups, templates"],
+                ["local-lvm", "LVM-Thin", "~1TB", "VM disks — Samsung NVMe"],
+                ["nvme-fast", "ZFS", "~954GB", "VM disks — Kingston NVMe, snapshots"],
+                ["tank", "ZFS Mirror", "2TB usable", "Safe VM storage — 2× 2TB GIGASTONE"],
+              ]}
+            />
+            <CodeBlock lang="bash" code={`zpool status nvme-fast   # check ZFS pool health\nzpool status tank\nzfs list                  # list all datasets`} />
+          </section>
+
+          {/* UBUNTU */}
+          <section id="ubuntu" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Ubuntu Docker Host</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Primary VM running all Docker workloads.</p>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              {[
+                ["OS", "Ubuntu 26.04 LTS", "Kernel 7.0.0-15-generic"],
+                ["IP", "10.20.30.15", "Static via netplan"],
+                ["Docker", "29.5.0", "Managed via Portainer"],
+                ["User", "admin", "SSH on port 22"],
+              ].map(([l, v, s]) => <StatCard key={l} label={l} value={v} sub={s} />)}
+            </div>
+            <CodeBlock lang="bash" code={`ssh admin@10.20.30.15            # SSH into docker host\nsudo docker ps                   # list running containers\nsudo docker compose up -d        # start a stack\nsudo docker logs <container>     # view logs`} />
+          </section>
+
+          {/* MONITORING */}
+          <section id="monitoring" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Monitoring Stack</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Full observability via Docker Compose in <code className="font-mono text-blue-600 dark:text-blue-400">~/monitoring/</code>. 30-day retention.</p>
+            <DataTable
+              headers={["Container", "Image", "Port", "Purpose"]}
+              rows={[
+                ["prometheus", "prom/prometheus", "9090", "Metrics collection + storage"],
+                ["grafana", "grafana/grafana", "3000", "Dashboards + visualization"],
+                ["node-exporter", "prom/node-exporter", "9100", "Host system metrics"],
+                ["cadvisor", "gcr.io/cadvisor", "8081", "Container resource usage"],
+                ["blackbox", "prom/blackbox-exporter", "9115", "HTTP/ICMP endpoint probing"],
+                ["unifi-poller", "golift/unifi-poller", "9130", "UniFi metrics → Prometheus"],
+              ]}
+            />
+            <Callout type="info">Config in <code className="font-mono">~/monitoring/prometheus/prometheus.yml</code>. Grafana secured with an admin account (credentials stored outside the repo). Dashboards imported for Node Exporter, Docker, and UniFi.</Callout>
+          </section>
+
+          {/* MEDIA */}
+          <section id="media" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Media Stack</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Plex + *arr stack for media management.</p>
+            <DataTable
+              headers={["Service", "IP / Port", "Purpose"]}
+              rows={[
+                ["Plex", "10.20.30.12:32400", "Media server — migrated from Mac Mini"],
+                ["Sonarr", "10.20.30.15:8989", "TV show manager"],
+                ["Radarr", "10.20.30.15:7878", "Movie manager"],
+                ["qBittorrent", "10.20.30.15:8080", "Download client"],
+                ["Prowlarr", "10.20.30.40:9696", "Indexer manager"],
+              ]}
+            />
+          </section>
+
+          {/* HOME AUTOMATION */}
+          <section id="homeautomation" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Home Automation</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Smart home infrastructure running on the LAN.</p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ["Home Assistant", "10.20.30.21", "Automation hub · user: admin"],
+                ["HOOBS", "10.20.30.24", "HomeKit bridge · SSH available"],
+                ["AdGuard Home", "10.20.30.25", "DNS filtering + ad blocking"],
+                ["Shelly", "LAN", "Smart switches"],
+              ].map(([l, v, s]) => <StatCard key={l} label={l} value={v} sub={s} />)}
+            </div>
+          </section>
+
+          {/* HOMEPAGE */}
+          <section id="homepage" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Homepage Dashboard</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">gethomepage running as Docker on port 3001, proxied via Nginx on port 8080.</p>
+            <Callout type="success">Config files in <code className="font-mono">/opt/homepage/config/</code>. Access via <code className="font-mono">http://10.20.30.15:8080</code> (auth required).</Callout>
+            <DataTable
+              headers={["File", "Purpose"]}
+              rows={[
+                ["services.yaml", "Service tiles and categories"],
+                ["bookmarks.yaml", "Quick link bookmarks"],
+                ["widgets.yaml", "Top bar widgets (weather, resources, clock)"],
+                ["settings.yaml", "Theme, layout, background"],
+              ]}
+            />
+            <CodeBlock lang="bash" code={`sudo nano /opt/homepage/config/services.yaml   # edit tiles\nsudo docker restart homepage                   # apply changes`} />
+          </section>
+
+          {/* REMOTE ACCESS */}
+          <section id="remote" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Remote Access — Guacamole</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Apache Guacamole on port 8888. Full RDP and SSH in the browser — no client needed.</p>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <StatCard label="URL" value=":8888/guacamole" sub="10.20.30.15:8888/guacamole" accent />
+              <StatCard label="Stack" value="3 containers" sub="guacamole + guacd + postgres" />
+            </div>
+            <DataTable
+              headers={["Connection", "Protocol", "Target"]}
+              rows={[
+                ["Windows Server 2022", "RDP", "10.20.30.16:3389"],
+                ["Windows Server 2025", "RDP", "10.20.30.17:3389"],
+                ["Windows 11 Client", "RDP", "10.20.30.18 (HOMELAB\\az)"],
+                ["Ubuntu Infra", "SSH", "10.20.30.15:22 (admin)"],
+                ["UDM Pro", "SSH", "10.20.30.1:22 (root)"],
+                ["HOOBS", "SSH", "10.20.30.24:22"],
+              ]}
+            />
+          </section>
+
+          {/* SECURITY */}
+          <section id="security" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Auth & Zero Trust</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Three-layer security stack. Works offline for local access even when internet is down.</p>
+            <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden mb-5">
+              <SecurityLayer num="1" name="Cloudflare Access (Zero Trust)" desc="Google SSO + YubiKey MFA · External access only via home.uplinksecurity.net" status="Active" />
+              <SecurityLayer num="2" name="Nginx Basic Auth" desc="Username + password · Local LAN via 10.20.30.15:8080 · .htpasswd on server" status="Active" />
+              <SecurityLayer num="3" name="PIN Overlay" desc="Client-side PIN lock · SHA-256 hashed · 30min auto-lock · Injected via sub_filter" status="Active" />
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              <StatCard label="Cloudflare Tunnel" value="homelab-tunnel" sub="cloudflared in Docker · no open ports" />
+              <StatCard label="External Domain" value="uplinksecurity.net" sub="home.uplinksecurity.net → Homepage" accent />
+              <StatCard label="Zero Trust Team" value="uplink-noc" sub="uplink-noc.cloudflareaccess.com" />
+              <StatCard label="Logout URL" value="/cdn-cgi/access/logout" sub="Bookmarked in Quick Actions" />
+            </div>
+            <Callout type="warning">Cloudflare Access requires internet. If internet is down, use <code className="font-mono">10.20.30.15:8080</code> — Nginx + PIN still protect it locally.</Callout>
+            <Callout type="info">UFW active: ports 22, 8080, 8090 ALLOWED. Port 3001 (Homepage direct) DENIED from network.</Callout>
+          </section>
+
+          {/* PORTS */}
+          <section id="ports" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Port Reference</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">All services and their port assignments.</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {[["Portainer","9000"],["Grafana","3000"],["Prometheus","9090"],["Homepage","3001"],["Nginx Auth Proxy","8080"],["Docs","8090"],["Guacamole","8888"],["Node Exporter","9100"],["cAdvisor","8081"],["Blackbox","9115"],["UniFi Poller","9130"],["Proxmox UI","8006"],["Plex","32400"],["n8n","5678"],["QNAP NAS","80/443"]].map(([s, p]) => <PortPill key={s} service={s} port={p} />)}
+            </div>
+          </section>
+
+          {/* COMMANDS */}
+          <section id="commands" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Common Commands</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Quick reference for day-to-day operations.</p>
+            <CodeBlock lang="docker" code={`sudo docker ps --format "table {{.Names}}\\t{{.Ports}}"   # list + ports\nsudo docker restart nginx                                  # restart container\nsudo docker logs -f <container>                           # follow logs\nsudo docker compose up -d                                  # start stack\nsudo docker stats                                          # live resource usage`} />
+            <CodeBlock lang="nginx" code={`cat /opt/nginx/conf/default.conf                # view config\nsudo docker restart nginx                       # reload\ncurl -I http://10.20.30.15:8080                # test auth header\ncurl -s http://10.20.30.15:8080 | grep pin.js  # verify PIN injection`} />
+            <CodeBlock lang="security" code={`sudo ufw status                                # firewall rules\nsudo ufw allow <port>/tcp                      # allow port\nsudo ufw deny <port>/tcp                       # block port\nsudo htpasswd /opt/nginx/.htpasswd admin       # update auth password\necho -n "PIN" | sha256sum                      # generate PIN hash`} />
+            <CodeBlock lang="zfs" code={`zpool status                                   # all pool health\nzfs list                                       # list datasets\nzfs snapshot tank/data@backup-$(date +%Y%m%d)  # create snapshot`} />
+          </section>
+
+          {/* ROADMAP */}
+          <section id="roadmap" className="mb-16 scroll-mt-20">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-1">Roadmap</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">Build phases from bare metal to full infrastructure lab.</p>
+            <div>
+              {[
+                { tag: "Phase 1 — Complete", tagColor: "green", dotColor: "green", title: "Foundation", body: "Proxmox VE on bare metal. ZFS storage pools. Ubuntu Server VM with static IP. Docker + Portainer. SSH access established." },
+                { tag: "Phase 2 — Complete", tagColor: "green", dotColor: "green", title: "Monitoring", body: "Prometheus + Grafana + cAdvisor + Node Exporter + Blackbox + UniFi Poller. 30-day retention and Grafana dashboards." },
+                { tag: "Phase 3 — Complete", tagColor: "green", dotColor: "green", title: "Dashboard & Remote Access", body: "Homepage dashboard on port 3001. Apache Guacamole for in-browser RDP/SSH. All services wired with live widgets." },
+                { tag: "Phase 4 — Complete", tagColor: "green", dotColor: "green", title: "Security & Zero Trust", body: "Cloudflare Zero Trust + Google SSO + YubiKey MFA. Nginx Basic Auth. PIN overlay (SHA-256). UFW firewall. Cloudflare Tunnel — no open ports." },
+                { tag: "Phase 5 — In Progress", tagColor: "blue", dotColor: "blue", title: "Windows Infrastructure", body: "Windows Server 2022 AD/DNS. Windows Server 2025. Windows 11 domain-joined client (HOMELAB\\az). Group Policy practice." },
+                { tag: "Phase 6 — Upcoming", tagColor: "gray", dotColor: "gray", title: "Kubernetes & Networking Lab", body: "MicroK8s or k3s cluster. BGP/VXLAN/EVPN networking lab. LibreNMS. Python + Ansible automation." },
+                { tag: "Phase 7 — Planned", tagColor: "gray", dotColor: "gray", title: "GitHub & Automation", body: "GitHub repo for all configs and docs. Infrastructure as Code with Ansible. CI/CD pipelines.", isLast: true },
+              ].map((p, i, arr) => <PhaseItem key={i} {...p} isLast={i === arr.length - 1} />)}
+            </div>
+          </section>
+
+        </main>
+
+        {/* RIGHT TOC */}
+        <aside className="hidden xl:block w-52 flex-shrink-0 py-10 pl-6">
+          <div className="sticky top-20">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">On this page</p>
+            <nav className="space-y-1">
+              {sections.map(s => (
+                <button key={s.id} onClick={() => scrollTo(s.id)}
+                  className={`block w-full text-left text-xs py-1 px-2 rounded transition-colors ${activeSection === s.id ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 font-medium" : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"}`}>
+                  {s.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </aside>
+      </div>
+
+      {/* FOOTER */}
+      <footer className="border-t border-gray-200 dark:border-gray-800 mt-8">
+        <div className="max-w-screen-xl mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-400 dark:text-gray-500">
+          <span>© 2026 Bandera NOC · Uplink Security · Bandera, TX</span>
+          <span className="font-mono">ubuntu 26.04 · docker 29.5 · proxmox 9.1</span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<DocsPage />);
+</script>
+</body>
+</html>
