@@ -50,5 +50,4 @@ Cloudflare Access policy. No VPN client, no exposed RDP, no inbound ports.
 | File | Description |
 |---|---|
 | `infrastructure.html` | Full technical documentation |
-| `Aziz_ElYazami_Technical_Portfolio.pdf` | Print version |
 | `index.html` | Portfolio landing page |
